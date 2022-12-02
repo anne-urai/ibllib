@@ -150,6 +150,10 @@ class CameraQC(base.QC):
         self._type = get_session_extractor_type(self.session_path) or None
         if self.sync_type is None:
             self.sync_type = 'nidq' if self._type == 'ephys' else None
+        # Eventually this needs to be more flexible
+        elif self.sync_type == 'nidq' and self.type != 'ephys':
+            self._type = 'ephys'
+
 
         logging.disable(logging.NOTSET)
         keys = ('count', 'pin_state', 'audio', 'fpga_times', 'wheel', 'video',
