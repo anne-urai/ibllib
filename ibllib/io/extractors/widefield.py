@@ -9,10 +9,12 @@ import pandas as pd
 import ibllib.exceptions as err
 import ibllib.io.extractors.base as extractors_base
 from ibllib.io.extractors.ephys_fpga import get_sync_fronts, get_sync_and_chn_map
-from ibllib.io.video import get_video_meta
+from ibllib.io.extractors.camera import get_video_length
 
 import wfield.cli as wfield_cli
 from labcams.io import parse_cam_log
+
+from one.api import ONE
 
 _logger = logging.getLogger('ibllib')
 
@@ -162,17 +164,23 @@ class Widefield(extractors_base.BaseExtractor):
 
         # Get video meta data to check number of widefield frames
         video_path = next(self.data_path.glob('imaging.frames*.mov'))
-        video_meta = get_video_meta(video_path)
+        if not video_path:
+            one = ONE()
+            datasets = one.list_datasets(one.path2eid(self.session_path), filename='imaging.frames.mov')
+            url = one.path2url(self.session_path / datasets[0])
+            video_length = get_video_length(url)
+        else:
+            video_length = get_video_length(video_path)
 
         # Check for differences between video and ttl (in some cases we expect there to be extra ttl than frame, this is okay)
-        diff = len(led) - video_meta.length
+        diff = len(led) - video_length
         if diff < 0:
             raise ValueError('More video frames than led frames detected')
         if diff > 2:
             raise ValueError('Led frames and video frames differ by more than 2')
 
         # take the timestamps as those recorded on fpga, no need to do any sycning
-        widefield_times = fpga_led_up[0:video_meta.length]
+        widefield_times = fpga_led_up[0:video_length]
 
         # Now extract the LED channels and meta data
         # Load channel meta and wiring map
