@@ -139,7 +139,7 @@ class BaseBpodTrialsExtractor(BaseExtractor):
             self.settings = raw.load_settings(self.session_path, task_collection=self.task_collection)
         if self.settings is None:
             self.settings = {"IBLRIG_VERSION_TAG": "100.0.0"}
-        elif self.settings["IBLRIG_VERSION_TAG"] == "":
+        elif self.settings.get("IBLRIG_VERSION_TAG", "") == "":
             self.settings["IBLRIG_VERSION_TAG"] = "100.0.0"
         return super(BaseBpodTrialsExtractor, self).extract(**kwargs)
 
