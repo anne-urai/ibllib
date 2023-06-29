@@ -138,8 +138,13 @@ def get_event_aligned_raster(times, events, tbin=0.02, values=None, epoch=[-0.4,
     """
 
     if bin:
-        vals, bin_times, _ = bincount2D(times, np.ones_like(times), xbin=tbin, weights=values)
+        vals, bin_times, _ = bincount2D(times, np.ones_like(times), xbin=tbin, weights=None)
         vals = vals[0]
+        # If we want to not just count events but aggregate values in bins, we can use those values as weights but
+        # then need to divide by the number of events in each bin to get the mean value in each bin
+        if values is not None:
+            vals_to_scale, _, _ = bincount2D(times, np.ones_like(times), xbin=tbin, weights=values)
+            vals = vals_to_scale[0] / vals
         t = np.arange(epoch[0], epoch[1] + tbin, tbin)
         nbin = t.shape[0]
     else:
