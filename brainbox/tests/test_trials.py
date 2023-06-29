@@ -168,3 +168,31 @@ class TestTrials(unittest.TestCase):
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[0:2, :]).ravel()))
         self.assertTrue(np.all(np.isnan(raster[-5:, :]).ravel()))
+
+        # Test that no data is sampled outside of the window when using uniformly sampled data
+        # Using the times as values allows to see at which times the data is actually sampled
+        times = np.arange(0, 100, ts)
+        epoch = [-0.6, -0.1]
+        raster, t = get_event_aligned_raster(times, use_trials, values=times, epoch=epoch, bin=False)
+        diff = raster - use_trials[:, np.newaxis]
+        self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
+        self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
+
+        # When binning, this implicitly tests whether the binned data is averaged (instead of e.g. summed)
+        raster, t = get_event_aligned_raster(times, use_trials, tbin=0.02, values=times, epoch=epoch, bin=True)
+        diff = raster - use_trials[:, np.newaxis]
+        self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
+        self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
+
+        # Same for non-uniformly sampled data
+        times = np.random.uniform(0, 100, int(100/ts))
+        times.sort()
+        raster, t = get_event_aligned_raster(times, use_trials, values=times, epoch=epoch, bin=False)
+        diff = raster - use_trials[:, np.newaxis]
+        self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
+        self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
+
+        raster, t = get_event_aligned_raster(times, use_trials, tbin=0.02, values=times, epoch=epoch, bin=True)
+        diff = raster - use_trials[:, np.newaxis]
+        self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
+        self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
