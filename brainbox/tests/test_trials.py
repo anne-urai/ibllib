@@ -119,52 +119,52 @@ class TestTrials(unittest.TestCase):
         use_trials = self.trials['stimOn_times'][self.trials['stimOn_times'] < 100]
 
         # Test for normal case where trials are within spike times
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.02)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.sum(np.isnan(raster)) == 0)
 
         # Test for the case where first trial/s is before first spike time
         spikes = np.arange(int(use_trials[0] + 1), 100, ts)
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.02)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[0, :])))
         self.assertTrue(np.all(~np.isnan(raster[1, :]).ravel()))
 
         spikes = np.arange(int(use_trials[4] + 1), 100, ts)
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.02)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[0:5, :]).ravel()))
         self.assertTrue(np.all(~np.isnan(raster[6, :]).ravel()))
 
         # Test for case where last trial/s is after last spike time
         spikes = np.arange(0, int(use_trials[-1] - 1), ts)
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.001)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[-1, :])))
         self.assertTrue(np.all(~np.isnan(raster[-2, :])))
 
         spikes = np.arange(0, int(use_trials[-5] - 1), ts)
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.02)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[-5:, :]).ravel()))
         self.assertTrue(np.all(~np.isnan(raster[-6, :]).ravel()))
 
         # Test for both before and after
         spikes = np.arange(int(use_trials[4] + 1), int(use_trials[-5] - 1), ts)
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.05)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[0:5, :]).ravel()))
         self.assertTrue(np.all(np.isnan(raster[-5:, :]).ravel()))
 
         # Test when nans have trials - these are removed from the raster
         use_trials[10:12] = np.nan
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.02)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[10:12, :]).ravel()))
         self.assertTrue(np.all(~np.isnan(raster[12:15, :]).ravel()))
 
         use_trials[0:2] = np.nan
-        raster, t = get_event_aligned_raster(spikes, use_trials)
+        raster, t = get_event_aligned_raster(spikes, use_trials, tbin=0.03)
         self.assertEqual(raster.shape[0], len(use_trials))
         self.assertTrue(np.all(np.isnan(raster[0:2, :]).ravel()))
         self.assertTrue(np.all(np.isnan(raster[-5:, :]).ravel()))
@@ -173,13 +173,8 @@ class TestTrials(unittest.TestCase):
         # Using the times as values allows to see at which times the data is actually sampled
         times = np.arange(0, 100, ts)
         epoch = [-0.6, -0.1]
-        raster, t = get_event_aligned_raster(times, use_trials, values=times, epoch=epoch, bin=False)
-        diff = raster - use_trials[:, np.newaxis]
-        self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
-        self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
-
         # When binning, this implicitly tests whether the binned data is averaged (instead of e.g. summed)
-        raster, t = get_event_aligned_raster(times, use_trials, tbin=0.02, values=times, epoch=epoch, bin=True)
+        raster, t = get_event_aligned_raster(times, use_trials, tbin=0.02, values=times, epoch=epoch)
         diff = raster - use_trials[:, np.newaxis]
         self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
         self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
@@ -187,12 +182,11 @@ class TestTrials(unittest.TestCase):
         # Same for non-uniformly sampled data
         times = np.random.uniform(0, 100, int(100/ts))
         times.sort()
-        raster, t = get_event_aligned_raster(times, use_trials, values=times, epoch=epoch, bin=False)
+        raster, t = get_event_aligned_raster(times, use_trials, tbin=0.02, values=times, epoch=epoch)
         diff = raster - use_trials[:, np.newaxis]
         self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
         self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
 
-        raster, t = get_event_aligned_raster(times, use_trials, tbin=0.02, values=times, epoch=epoch, bin=True)
-        diff = raster - use_trials[:, np.newaxis]
-        self.assertTrue(np.all(diff[~np.isnan(diff)] >= epoch[0]))
-        self.assertTrue(np.all(diff[~np.isnan(diff)] <= epoch[1]))
+        # Check that too small bin raises error
+        with self.assertRaises(ValueError):
+            _, _ = get_event_aligned_raster(times, use_trials, tbin=ts, values=times, epoch=epoch)

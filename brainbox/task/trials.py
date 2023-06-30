@@ -125,7 +125,7 @@ def find_trial_ids(trials, side='all', choice='all', order='trial num', sort='id
     return trial_id, dividers
 
 
-def get_event_aligned_raster(times, events, tbin=0.02, values=None, epoch=[-0.4, 1], bin=True):
+def get_event_aligned_raster(times, events, tbin=0.02, values=None, epoch=[-0.4, 1]):
     """
     Get event aligned raster
     :param times: array of times e.g spike times or dlc points
@@ -137,54 +137,33 @@ def get_event_aligned_raster(times, events, tbin=0.02, values=None, epoch=[-0.4,
     :return:
     """
 
-    if bin:
-        vals, bin_times, _ = bincount2D(times, np.ones_like(times), xbin=tbin, weights=None)
-        vals = vals[0]
-        # If we want to not just count events but aggregate values in bins, we can use those values as weights but
-        # then need to divide by the number of events in each bin to get the mean value in each bin
-        if values is not None:
-            vals_to_scale, _, _ = bincount2D(times, np.ones_like(times), xbin=tbin, weights=values)
-            vals = vals_to_scale[0] / vals
-        t = np.arange(epoch[0], epoch[1] + tbin, tbin)
-        nbin = t.shape[0]
-    else:
-        vals = values
-        bin_times = times
-        tbin = np.mean(np.diff(bin_times))
-        t = np.arange(epoch[0], epoch[1], tbin)
-        nbin = t.shape[0]
+    # If bin time is smaller than the time resolution of the data, this can create problems (and doesn't make sense)
+    if tbin <= np.nanmean(np.diff(times)):
+        raise ValueError('Tbin should not be smaller than the average time resolution of the data')
+    vals, bin_times, _ = bincount2D(times, np.ones_like(times), xbin=tbin, weights=None)
+    # If we want to not just count events but aggregate values in bins, we can use those values as weights but
+    # then need to divide by the number of events in each bin to get the mean value in each bin
+    if values is not None:
+        vals_to_scale, _, _ = bincount2D(times, np.ones_like(times), xbin=tbin, weights=values)
+        vals = vals_to_scale / vals
+    vals = np.squeeze(vals)
 
-    # remove nan trials
-    non_nan_events = events[~np.isnan(events)]
-    nan_idx = np.where(~np.isnan(events))
-    intervals = np.c_[non_nan_events + epoch[0], non_nan_events + epoch[1]]
+    # Get the desired interval around events for each trial
+    intervals = np.c_[events + epoch[0], events + epoch[1]]
+    # Make a mask to exclude trials were the event is nan, or interval starts before or ends after bin_times
+    valid_trials = (~np.isnan(events)) & (intervals[:, 0] >= times[0]) & (intervals[:, 1] <= times[-1])
 
-    # Remove any trials that are later than the last value in bin_times
-    out_intervals = intervals[:, 1] > bin_times[-1]
-    epoch_idx = np.searchsorted(bin_times, intervals)[np.invert(out_intervals)]
-
-    for ep in range(nbin):
-        if ep == 0:
-            event_raster = (vals[epoch_idx[:, 0] + ep]).astype(float)
-        else:
-            event_raster = np.c_[event_raster, vals[epoch_idx[:, 0] + ep]]
-
-    # Find any trials that are less than the first value time and fill with nans (case for example
-    # where spiking of cluster doesn't start till after start of first trial due to settling of
-    # brain)
-    event_raster[intervals[np.invert(out_intervals), 0] < bin_times[0]] = np.nan
-
-    # Add back in the trials that were later than last value with nans
-    if np.sum(out_intervals) > 0:
-        event_raster = np.r_[event_raster, np.full((np.sum(out_intervals),
-                                                    event_raster.shape[1]), np.nan)]
-        assert event_raster.shape[0] == intervals.shape[0]
+    # This is the first index to include to be sure to get values >= epoch[0]
+    epoch_idx_start = np.searchsorted(times, intervals[:, 0], side='left')[valid_trials]
+    # This is the first index to exclude (NOT the last to include) to be sure to get values <= epoch[1]
+    epoch_idx_stop = np.searchsorted(bin_times, intervals[:, 1], side='right')[valid_trials]
+    event_raster = np.asarray([vals[start:stop] for start, stop in zip(epoch_idx_start, epoch_idx_stop)], dtype=float)
 
     # Reindex if we have removed any nan values
     all_event_raster = np.full((events.shape[0], event_raster.shape[1]), np.nan)
-    all_event_raster[nan_idx, :] = event_raster
+    all_event_raster[valid_trials, :] = event_raster
 
-    return all_event_raster, t
+    return all_event_raster, bin_times
 
 
 def get_psth(raster, trial_ids=None):
