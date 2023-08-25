@@ -5,11 +5,17 @@ import subprocess
 import logging
 from getpass import getpass
 import shutil
+import warnings
+from itertools import groupby, starmap
+from collections import defaultdict
 
 import globus_sdk
 import iblutil.io.params as iopar
+from one.webclient import AlyxClient
+from one.api import One
+from one.remote.globus import Globus
 from one.alf.files import get_session_path, add_uuid_string
-from one.alf.spec import is_uuid_string
+from one.alf.spec import is_uuid_string, is_uuid
 from one import params
 from one.converters import path_from_dataset
 from one.remote import globus
@@ -70,9 +76,19 @@ def globus_path_from_dataset(dset, repository=None, uuid=False):
 
 
 class Patcher(abc.ABC):
-    def __init__(self, one=None):
-        assert one
-        self.one = one
+    def __init__(self, one=None, alyx=None):
+        assert one or alyx
+        if isinstance(one, One):
+            warnings.warn(
+                'Passing an ONE instance is deprecated; pass in an AlyxClient instance instead', DeprecationWarning)
+            assert not one.offline
+            self.alyx = one.alyx
+        elif isinstance(alyx, AlyxClient):
+            self.alyx = alyx
+        elif one is None and alyx is None:
+            raise ValueError('An instance of AlyxClient is required')
+        else:
+            raise TypeError('An instance of AlyxClient is required')
 
     def _patch_dataset(self, path, dset_id=None, dry=False, ftp=False):
         """
@@ -151,8 +167,8 @@ class Patcher(abc.ABC):
         # first register the file
         if not isinstance(file_list, list):
             file_list = [Path(file_list)]
-        assert len(set([get_session_path(f) for f in file_list])) == 1
-        assert all([Path(f).exists() for f in file_list])
+        assert len(set(get_session_path(f) for f in file_list)) == 1
+        assert all(Path(f).exists() for f in file_list)
         response = self.register_dataset(file_list, dry=dry, **kwargs)
         if dry:
             return
@@ -344,6 +360,68 @@ class GlobusPatcher(Patcher):
                 self.transfer_client.submit_delete(delete)
 
 
+class IBLGlobusPatcher(Patcher, Globus):
+    """This is a replacement for the GlobusPatcher class, utilizing the ONE Globus class."""
+    def __init__(self, alyx=None, client_name='default'):
+        """
+
+        Parameters
+        ----------
+        alyx : one.webclient.AlyxClient
+            An instance of Alyx to use.
+        client_name : str, default='default'
+            The Globus client name.
+        """
+        self.alyx = alyx or AlyxClient()
+        Globus.__init__(client_name=client_name)  # NB we don't init Patcher as we're not using ONE
+
+    def delete_dataset(self, dataset, dry=False):
+        """
+        Delete a dataset off Alyx and remove file record from all Globus repositories.
+
+        Parameters
+        ----------
+        dataset : uuid.UUID, str, dict
+            The dataset record or ID to delete.
+        dry : bool
+            If true, dataset is not deleted and file paths that would be removed are returned.
+
+        Returns
+        -------
+        list of uuid.UUID
+            A list of Globus delete task IDs if dry is false.
+        dict of str
+            A map of data repository names and relative paths of the deleted files.
+        """
+
+        if is_uuid(dataset):
+            did = dataset
+            dataset = self.alyx.rest('datasets', 'read', id=did)
+        else:
+            did = dataset['url'].split('/')[-1]
+
+        files_by_repo = defaultdict(list)  # uuid.UUID -> [pathlib.PurePosixPath]
+        file_records = filter(lambda x: x['exists'], dataset['file_records'])
+        for repo, record in groupby(file_records, lambda x: x['data_repository']):
+            if not record['globus_id']:
+                raise NotImplementedError
+            if repo not in self.endpoints:
+                self.add_endpoint(repo, alyx=self.alyx)
+            filepath = PurePosixPath(record['relative_path'])
+            if 'flatiron' in repo:
+                filepath = add_uuid_string(filepath, did)
+            files_by_repo[repo].append(filepath)
+
+        if dry:
+            return [], files_by_repo
+
+        # Delete the files
+        task_ids = list(starmap(self.delete_data, files_by_repo.items()))
+        # Delete the dataset from Alyx
+        self.alyx.rest('datasets', 'delete', id=did)
+        return task_ids, files_by_repo
+
+
 class SSHPatcher(Patcher):
     """
     Requires SSH keys access on the FlatIron
@@ -371,7 +449,7 @@ class FTPPatcher(Patcher):
     """
     def __init__(self, one=None):
         super().__init__(one=one)
-        alyx = self.one.alyx
+        alyx = self.alyx
         if not getattr(alyx._par, 'FTP_DATA_SERVER_LOGIN', False):
             alyx._par = self.setup(par=alyx._par, silent=alyx.silent)
         login, pwd = (one.alyx._par.FTP_DATA_SERVER_LOGIN, one.alyx._par.FTP_DATA_SERVER_PWD)
@@ -381,7 +459,7 @@ class FTPPatcher(Patcher):
         self.ftp.prot_p()
         self.ftp.login(login, pwd)
         # pre-fetch the repositories so as not to query them for every file registered
-        self.repositories = self.one.alyx.rest("data-repository", "list")
+        self.repositories = self.alyx.rest("data-repository", "list")
 
     @staticmethod
     def setup(par=None, silent=False):
@@ -440,13 +518,13 @@ class FTPPatcher(Patcher):
             fr_2del = list(filter(lambda fr: fr['data_repository'] == DMZ_REPOSITORY and
                                              fr['relative_path'] == relative_path, frs))  # NOQA
             if len(fr_2del) == 1:
-                self.one.alyx.rest('files', 'delete', id=fr_2del[0]['id'])
+                self.alyx.rest('files', 'delete', id=fr_2del[0]['id'])
             # 2) the patch ftp file needs to be prepended with the server repository path
-            self.one.alyx.rest('files', 'partial_update', id=fr_ftp['id'],
-                               data={'relative_path': relative_path, 'exists': True})
+            self.alyx.rest('files', 'partial_update', id=fr_ftp['id'],
+                           data={'relative_path': relative_path, 'exists': True})
             # 3) the server file is labeled as not existing
-            self.one.alyx.rest('files', 'partial_update', id=fr_server['id'],
-                               data={'exists': False})
+            self.alyx.rest('files', 'partial_update', id=fr_server['id'],
+                           data={'exists': False})
         return response
 
     def _scp(self, local_path, remote_path, dry=True):
