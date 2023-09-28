@@ -225,6 +225,10 @@ class CameraTimestampsBpod(BaseBpodTrialsExtractor):
         the session are extrapolated based on the median frame rate, otherwise they will be NaNs.
         :return: a numpy array of camera timestamps
         """
+        # Currently only syncing GPIO with the audio TTLs is supported for Bpod extraction
+        if (sync_label := kwargs.pop('sync_label', 'audio')) != 'audio':
+            raise ValueError(f'alignment with {sync_label} not supported')
+
         raw_ts = self._times_from_bpod()
         count, (*_, gpio) = raw.load_embedded_frame_data(self.session_path, 'left')
         if video_path is None:

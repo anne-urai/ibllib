@@ -319,6 +319,11 @@ def make_pipeline(session_path, **pkwargs):
             tasks[tn] = type((tn := f'VideoSyncQC_{sync}'), (vtasks.VideoSyncQcCamlog,), {})(
                 **kwargs, **video_kwargs, **sync_kwargs)
         else:
+            # Determine sync label from experiment description
+            sync_labels = {x.get('sync_label', 'audio') for x in devices['cameras'].values()}
+            assert len(sync_labels) == 1, 'multiple camera sync labels not supported'
+            video_kwargs['sync_label'] = next(iter(sync_labels))
+
             tasks[tn] = type((tn := 'VideoRegisterRaw'), (vtasks.VideoRegisterRaw,), {})(
                 **kwargs, **video_kwargs)
             tasks[tn] = type((tn := 'VideoCompress'), (vtasks.VideoCompress,), {})(
