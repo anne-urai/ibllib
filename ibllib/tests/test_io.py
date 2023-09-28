@@ -584,9 +584,9 @@ class TestSessionParams(unittest.TestCase):
             {'ephysChoiceWorld': {'collection': 'raw_behavior_data', 'sync_label': 'bpod'}},
             {'passiveChoiceWorld': {'collection': 'raw_passive_data_bis'}}])
         collections = session_params.get_collections(tasks)
-        self.assertEqual(set(collections['passiveChoiceWorld']), set(['raw_passive_data_bis', 'raw_passive_data']))
+        self.assertEqual(set(collections['passiveChoiceWorld']), {'raw_passive_data_bis', 'raw_passive_data'})
         collections = session_params.get_collections(tasks, flat=True)
-        self.assertEqual(set(collections), set(['raw_passive_data_bis', 'raw_passive_data', 'raw_behavior_data']))
+        self.assertEqual(set(collections), {'raw_passive_data_bis', 'raw_passive_data', 'raw_behavior_data'})
 
 
 class TestRawDaqLoaders(unittest.TestCase):
