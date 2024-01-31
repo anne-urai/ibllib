@@ -149,6 +149,7 @@ def load_trials(sess_path, one, collections=None, force=True, mode='raise'):
         # Next try and load all trials data through ONE
         try:
             if not force:
+                print('jere')
                 return None
             eid = one.path2eid(sess_path)
             if collections is None:
@@ -195,7 +196,8 @@ def load_trials(sess_path, one, collections=None, force=True, mode='raise'):
                 else:
                     logger.warning(f'Exhausted all possibilities for loading trials for {sess_path}')
                     return
-
+    print(trials)
+    print('ali')
     return trials
 
 
@@ -449,7 +451,7 @@ def get_data_collection(session_path):
                 continue
             collections.append(collection)
     else:
-        settings = Path(session_path).rglob('_iblrig_taskSettings.raw.json')
+        settings = Path(session_path).rglob('_iblrig_taskSettings.raw.*json')
         for setting in settings:
             if setting.parent.name != 'raw_passive_data':
                 collections.append(setting.parent.name)
