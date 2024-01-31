@@ -149,7 +149,6 @@ def load_trials(sess_path, one, collections=None, force=True, mode='raise'):
         # Next try and load all trials data through ONE
         try:
             if not force:
-                print('jere')
                 return None
             eid = one.path2eid(sess_path)
             if collections is None:
@@ -196,8 +195,6 @@ def load_trials(sess_path, one, collections=None, force=True, mode='raise'):
                 else:
                     logger.warning(f'Exhausted all possibilities for loading trials for {sess_path}')
                     return
-    print(trials)
-    print('ali')
     return trials
 
 
