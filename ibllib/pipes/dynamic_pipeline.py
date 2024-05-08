@@ -283,6 +283,7 @@ def make_pipeline(session_path, **pkwargs):
 
     # Ephys tasks
     if 'neuropixel' in devices:
+        nptype = None
         ephys_kwargs = {'device_collection': 'raw_ephys_data'}
         tasks['EphysRegisterRaw'] = type('EphysRegisterRaw', (etasks.EphysRegisterRaw,), {})(**kwargs, **ephys_kwargs)
 
@@ -290,6 +291,8 @@ def make_pipeline(session_path, **pkwargs):
         register_tasks = []
         for pname, probe_info in devices['neuropixel'].items():
             meta_file = spikeglx.glob_ephys_files(Path(session_path).joinpath(probe_info['collection']), ext='meta')
+            if len(meta_file) == 0:
+                continue
             meta_file = meta_file[0].get('ap')
             nptype = spikeglx._get_neuropixel_version_from_meta(spikeglx.read_meta_data(meta_file))
             nshanks = spikeglx._get_nshanks_from_meta(spikeglx.read_meta_data(meta_file))
